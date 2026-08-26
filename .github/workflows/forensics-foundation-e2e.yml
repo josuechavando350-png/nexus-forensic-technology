@@ -1,0 +1,37 @@
+name: forensics-foundation-e2e
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify-sleuthkit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Sleuth Kit and ext4 tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends sleuthkit e2fsprogs
+          fls -V
+          mkfs.ext4 -V
+          debugfs -V
+
+      - name: Compile forensic integration modules
+        run: python -m compileall -q packages/integrations
+
+      - name: Run live Sleuth Kit certification
+        env:
+          NEXUS_RUN_SLEUTHKIT_E2E: "1"
+        run: python -m unittest packages.integrations.e2e.test_sleuthkit_e2e -v
