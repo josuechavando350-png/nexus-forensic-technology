@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 TOTAL_CATALOG_CAPABILITIES = 304
 
 
@@ -42,6 +41,23 @@ _GROUPS: tuple[tuple[set[int], tuple[str, ...], str], ...] = (
     ({268, 269, 270, 271, 274, 275, 277, 278, 279, 282, 294, 295, 299}, ("packages.forensic_core.policy", "packages.forensic_core.privacy", "packages.integrations.opa"), "verified_local"),
     ({261, 262}, ("packages.forensic_core.reporting",), "verified_local"),
     ({242}, ("packages.forensic_core.case_store",), "verified_local"),
+    ({3, 27, 28, 29, 34, 40, 61}, ("packages.forensic_core.case_store", "packages.integrations.platforms", "packages.integrations.search"), "adapter_contract"),
+    ({4, 7, 10, 11, 16, 68, 219, 221}, ("packages.forensic_core.streaming", "packages.integrations.streaming"), "adapter_contract"),
+    ({5, 13, 26, 31, 32, 36, 120, 123, 125, 126, 230}, ("packages.forensic_core.anomaly", "packages.forensic_core.hypothesis", "packages.forensic_core.identity"), "verified_local"),
+    ({6, 8, 15, 17, 18, 20, 25, 55, 56, 69, 70, 71, 72, 73, 74, 77, 79, 80, 81, 82, 84, 85, 86, 87, 88, 89, 90, 91, 95, 102, 163, 164, 165, 168, 293}, ("packages.integrations.defensive_cli",), "adapter_contract"),
+    ({14, 291, 292}, ("packages.forensic_core.simulation",), "verified_local"),
+    ({22, 113, 115, 117, 118, 119, 153, 166, 173, 174, 202, 203, 204, 206}, ("packages.forensic_core.advanced_graph", "packages.forensic_core.graph", "packages.integrations.cti", "packages.integrations.graph"), "verified_local"),
+    ({33, 178, 179, 180, 181, 182, 183, 184, 185, 215, 216, 217, 222, 231}, ("packages.forensic_core.nlp", "packages.integrations.platforms"), "verified_local"),
+    ({41, 42, 43, 48, 51, 52, 54, 145, 146, 149, 150, 152, 155, 156, 157, 158, 159, 167}, ("packages.integrations.web_intel", "packages.integrations.passive_infra", "packages.integrations.platforms"), "adapter_contract"),
+    ({45, 191, 193, 196}, ("packages.forensic_core.geospatial", "packages.integrations.geospatial", "packages.integrations.forensics_cli"), "verified_local"),
+    ({49, 50, 57, 169, 170, 175}, ("packages.forensic_core.identity", "packages.forensic_core.advanced_graph", "packages.integrations.platforms"), "verified_local"),
+    ({105}, ("packages.integrations.auth",), "adapter_contract"),
+    ({132, 133, 134, 138, 139, 140, 141, 142, 143}, ("packages.forensic_core.financial", "packages.forensic_core.graph", "packages.forensic_core.anomaly", "packages.integrations.blockchain"), "verified_local"),
+    ({161, 162}, ("packages.integrations.cti",), "adapter_contract"),
+    ({241}, ("packages.forensic_core.case_store", "packages.integrations.crypto_ops"), "verified_local"),
+    ({250, 251, 255, 258}, ("packages.integrations.crypto_ops", "packages.forensic_core.security"), "adapter_contract"),
+    ({254, 257, 296, 297, 302}, ("packages.forensic_core.security", "packages.integrations.security_services"), "adapter_contract"),
+    ({263, 264, 265, 266, 267, 272, 273, 276, 280, 281}, ("packages.forensic_core.legal", "packages.forensic_core.search", "packages.forensic_core.policy"), "verified_local"),
 )
 
 
