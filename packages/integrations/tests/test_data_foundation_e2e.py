@@ -3,11 +3,7 @@ from __future__ import annotations
 import os
 import time
 import unittest
-from typing import Callable
-
-import psycopg
-from neo4j import GraphDatabase
-from opensearchpy import OpenSearch
+from typing import Any, Callable
 
 from packages.integrations.geospatial import PostGISAdapter
 from packages.integrations.graph import Neo4jAdapter
@@ -30,6 +26,19 @@ def _wait_until(check: Callable[[], bool], *, timeout_s: float = 90.0, interval_
 class DataFoundationE2ETests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        if os.environ.get("NEXUS_RUN_DATA_FOUNDATION_E2E") != "1":
+            raise unittest.SkipTest("live data-foundation dependencies are only required in the dedicated E2E workflow")
+
+        try:
+            import psycopg
+            from neo4j import GraphDatabase
+            from opensearchpy import OpenSearch
+        except ImportError as exc:
+            raise RuntimeError("data-foundation E2E client dependencies are not installed") from exc
+
+        cls.psycopg: Any = psycopg
+        cls.GraphDatabase: Any = GraphDatabase
+        cls.OpenSearch: Any = OpenSearch
         cls.pg_dsn = os.environ.get(
             "NEXUS_POSTGIS_DSN",
             "postgresql://nexus:nexus@127.0.0.1:5432/nexus",
@@ -45,14 +54,14 @@ class DataFoundationE2ETests(unittest.TestCase):
 
     @classmethod
     def _postgis_ready(cls) -> bool:
-        with psycopg.connect(cls.pg_dsn, connect_timeout=3) as connection:
+        with cls.psycopg.connect(cls.pg_dsn, connect_timeout=3) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 return cursor.fetchone() == (1,)
 
     @classmethod
     def _neo4j_ready(cls) -> bool:
-        driver = GraphDatabase.driver(
+        driver = cls.GraphDatabase.driver(
             cls.neo4j_uri,
             auth=(cls.neo4j_user, cls.neo4j_password),
             connection_timeout=3,
@@ -65,11 +74,11 @@ class DataFoundationE2ETests(unittest.TestCase):
 
     @classmethod
     def _opensearch_ready(cls) -> bool:
-        client = OpenSearch(cls.opensearch_url, timeout=3)
+        client = cls.OpenSearch(cls.opensearch_url, timeout=3)
         return bool(client.ping())
 
     def test_postgis_adapter_against_real_postgis(self) -> None:
-        with psycopg.connect(self.pg_dsn) as connection:
+        with self.psycopg.connect(self.pg_dsn) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis")
                 cursor.execute("DROP TABLE IF EXISTS nexus_e2e_points")
@@ -103,7 +112,7 @@ class DataFoundationE2ETests(unittest.TestCase):
             self.assertEqual([row[0] for row in rows], ["near"])
 
     def test_neo4j_adapter_against_real_neo4j(self) -> None:
-        driver = GraphDatabase.driver(
+        driver = self.GraphDatabase.driver(
             self.neo4j_uri,
             auth=(self.neo4j_user, self.neo4j_password),
         )
@@ -123,7 +132,7 @@ class DataFoundationE2ETests(unittest.TestCase):
             driver.close()
 
     def test_opensearch_adapter_against_real_opensearch(self) -> None:
-        client = OpenSearch(self.opensearch_url, timeout=10)
+        client = self.OpenSearch(self.opensearch_url, timeout=10)
         index = "nexus-e2e-evidence"
         if client.indices.exists(index=index):
             client.indices.delete(index=index)
