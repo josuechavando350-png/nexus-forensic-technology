@@ -1,0 +1,31 @@
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  forensic-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile Python sources
+        run: python -m compileall -q packages
+      - name: Run evidence integrity tests
+        run: python -m unittest discover -s packages/evidence_core/tests -v
+      - name: Run forensic core tests
+        run: python -m unittest discover -s packages/forensic_core/tests -v
+      - name: Run integration contract tests
+        run: python -m unittest discover -s packages/integrations/tests -v
+      - name: Verify capability coverage checkpoint
+        run: python -m unittest discover -s packages/capabilities/tests -v
