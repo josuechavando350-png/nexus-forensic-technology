@@ -7,7 +7,7 @@ This audit covers the first live-service certification slice after the 304-capab
 Services in scope:
 
 1. PostgreSQL 16 + PostGIS 3.4
-2. Neo4j 5.24 Community
+2. Neo4j 5.24.2 Community
 3. OpenSearch 2.17.1
 
 The purpose is to replace contract-only confidence with executable end-to-end verification against real service processes started in CI.
@@ -28,7 +28,7 @@ The purpose is to replace contract-only confidence with executable end-to-end ve
 
 The compose file pins explicit service versions instead of floating `latest` tags. Credentials are test-only fixed values and are not represented as production secrets. Each service is exposed only for the ephemeral CI/local certification stack.
 
-PostGIS is provisioned with a dedicated test database and health check. Neo4j is started with explicit authentication. OpenSearch runs single-node with its security plugin disabled only for this disposable certification environment so the test measures the adapter protocol rather than TLS/bootstrap configuration.
+PostGIS is provisioned with a dedicated test database and health check. Neo4j is started with explicit authentication. OpenSearch runs single-node with its security plugin disabled only for this disposable certification environment so the test measures the adapter protocol rather than production TLS/bootstrap configuration.
 
 ### PostGIS certification
 
@@ -60,6 +60,22 @@ Service readiness is bounded by a monotonic 90-second timeout per dependency and
 
 Failure paths capture service logs before cleanup.
 
+### Unit/E2E isolation correction
+
+The first quality run failed because normal integration-test discovery imported the live E2E module before the dedicated workflow had installed `psycopg`, `neo4j`, and `opensearch-py`.
+
+The correction moved optional client imports into `setUpClass` and requires `NEXUS_RUN_DATA_FOUNDATION_E2E=1` before live tests execute. Normal unit discovery now skips the E2E class without importing external clients, while the dedicated E2E workflow explicitly enables it.
+
+This preserves a strict separation between fast contract tests and service-backed certification tests.
+
+### OpenSearch bootstrap correction
+
+The first live OpenSearch attempt did not start because OpenSearch 2.17.1 requires an initial admin password when the demo security installer is enabled. The container logs exposed the failure directly.
+
+The isolated E2E stack was corrected to set `DISABLE_INSTALL_DEMO_CONFIG=true` and `DISABLE_SECURITY_PLUGIN=true`. This is limited to synthetic CI certification. It is not a production security configuration.
+
+The Neo4j image was also tightened from the patch-floating `5.24-community` tag to the explicit `5.24.2-community` tag observed during the failed run.
+
 ## Dependency controls
 
 The CI workflow pins Python client versions:
@@ -68,7 +84,7 @@ The CI workflow pins Python client versions:
 - `neo4j == 5.24.0`
 - `opensearch-py == 2.7.1`
 
-The service images are also pinned. This prevents an unreviewed upstream `latest` release from silently changing the certification target.
+The service images use explicit release tags. No `latest` image is used.
 
 ## Security boundaries
 
@@ -76,15 +92,28 @@ This stack contains only synthetic test data. It does not collect, track, enrich
 
 The OpenSearch security plugin is disabled solely in the isolated disposable CI stack. A production deployment must use authentication, TLS, access control, secrets management, audit logging, and network isolation; this audit does not certify those production controls.
 
+## Executed verification
+
+Final PR-head verification on commit `eeddc193ca5d476a7fabf726377ede73c8b61dcf`:
+
+- `quality` workflow run 70: **success**
+- `data-foundation-e2e` workflow run 4: **success**
+- live PostGIS adapter test: **passed**
+- live Neo4j adapter test: **passed**
+- live OpenSearch adapter test: **passed**
+- service cleanup step: **passed**
+
+No mocked service response was used for the three certification tests.
+
 ## Acceptance gate
 
-This slice is accepted only when the `data-foundation-e2e` GitHub Actions workflow is green on the PR head and all three live-service tests pass.
+**PASSED.**
 
-Until that run succeeds, this document records the code review but does not claim end-to-end certification.
+This slice is accepted as end-to-end verified for the exact adapter operations exercised by the three live tests.
 
 ## Residual risks
 
-- Docker image availability remains an external dependency of CI.
-- This test certifies the adapter operations exercised here, not every feature of PostgreSQL/PostGIS, Neo4j, or OpenSearch.
+- Docker registry/image availability remains an external dependency of CI.
+- This certification covers the adapter operations exercised here, not every feature of PostgreSQL/PostGIS, Neo4j, or OpenSearch.
 - Production security configuration is intentionally outside this first data-functionality certification slice and requires a separate audited hardening stage.
 - Performance, high availability, backup/restore, migrations, and large-dataset behavior are not certified by this slice.
