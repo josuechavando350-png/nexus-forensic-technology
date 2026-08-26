@@ -1,0 +1,95 @@
+services:
+  redis:
+    image: redis:8.2.1
+    command: ["redis-server", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.4
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.ml.enabled: "false"
+      ES_JAVA_OPTS: "-Xms768m -Xmx768m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow' >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: nexusminio
+      MINIO_ROOT_PASSWORD: nexusminio-certification-password
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:4.1.4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: nexus
+      RABBITMQ_DEFAULT_PASS: nexus-rabbit-certification-password
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  opencti:
+    image: opencti/platform:7.260824.0
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=2048"
+      APP__PORT: "8080"
+      APP__BASE_URL: "http://localhost:8080"
+      APP__ADMIN__EMAIL: "admin@nexus.test"
+      APP__ADMIN__PASSWORD: "Nexus-OpenCTI-Certification-2026!"
+      APP__ADMIN__TOKEN: "11111111-1111-4111-8111-111111111111"
+      APP__ENCRYPTION_KEY: "nexus-opencti-certification-encryption-key-2026"
+      APP__HEALTH_ACCESS_KEY: "22222222-2222-4222-8222-222222222222"
+      REDIS__HOSTNAME: redis
+      REDIS__PORT: "6379"
+      ELASTICSEARCH__URL: "http://elasticsearch:9200"
+      ELASTICSEARCH__NUMBER_OF_REPLICAS: "0"
+      MINIO__ENDPOINT: minio
+      MINIO__PORT: "9000"
+      MINIO__USE_SSL: "false"
+      MINIO__ACCESS_KEY: nexusminio
+      MINIO__SECRET_KEY: nexusminio-certification-password
+      RABBITMQ__HOSTNAME: rabbitmq
+      RABBITMQ__PORT: "5672"
+      RABBITMQ__PORT_MANAGEMENT: "15672"
+      RABBITMQ__MANAGEMENT_SSL: "false"
+      RABBITMQ__USERNAME: nexus
+      RABBITMQ__PASSWORD: nexus-rabbit-certification-password
+      SMTP__HOSTNAME: localhost
+      SMTP__PORT: "25"
+      PROVIDERS__LOCAL__STRATEGY: LocalStrategy
+    depends_on:
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health?health_access_key=22222222-2222-4222-8222-222222222222"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
