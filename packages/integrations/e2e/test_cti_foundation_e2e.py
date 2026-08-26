@@ -66,7 +66,15 @@ class MISPE2ETests(unittest.TestCase):
 
     @classmethod
     def _ready(cls) -> bool:
-        response = requests.get(f"{cls.base_url}/users/heartbeat", timeout=5)
+        response = requests.get(
+            f"{cls.base_url}/servers/getVersion",
+            headers={
+                "Authorization": cls.key,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            timeout=5,
+        )
         return response.status_code == 200
 
     def test_misp_adapter_against_real_platform(self) -> None:
