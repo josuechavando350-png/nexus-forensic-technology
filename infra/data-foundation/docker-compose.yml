@@ -14,7 +14,7 @@ services:
       retries: 20
 
   neo4j:
-    image: neo4j:5.24-community
+    image: neo4j:5.24.2-community
     environment:
       NEO4J_AUTH: neo4j/nexusforensic
     ports:
@@ -30,7 +30,8 @@ services:
     image: opensearchproject/opensearch:2.17.1
     environment:
       discovery.type: single-node
-      plugins.security.disabled: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_SECURITY_PLUGIN: "true"
       OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
     ports:
       - "9200:9200"
