@@ -5,10 +5,11 @@ from packages.capabilities import CAPABILITY_COVERAGE, catalog_progress_percent,
 
 
 class CapabilityCoverageTests(unittest.TestCase):
-    def test_checkpoint_is_exactly_half_of_catalog(self) -> None:
-        self.assertEqual(implemented_capability_count(), 152)
-        self.assertEqual(catalog_progress_percent(), 50.0)
-        self.assertEqual(len(set(CAPABILITY_COVERAGE)), 152)
+    def test_checkpoint_covers_full_catalog(self) -> None:
+        self.assertEqual(implemented_capability_count(), 304)
+        self.assertEqual(catalog_progress_percent(), 100.0)
+        self.assertEqual(len(set(CAPABILITY_COVERAGE)), 304)
+        self.assertEqual(set(CAPABILITY_COVERAGE), set(range(1, 305)))
 
     def test_every_coverage_reference_imports(self) -> None:
         refs = {ref for coverage in CAPABILITY_COVERAGE.values() for ref in coverage.implementation_refs}
