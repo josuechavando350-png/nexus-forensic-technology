@@ -33,12 +33,16 @@ jobs:
         run: python -m pip install --requirement requirements-api.txt
 
       - name: Compile API sources
-        run: python -m compileall -q config.py auth.py auditoria.py tasks.py main.py tests
+        run: python -m compileall -q config.py auth.py auditoria.py tasks.py main.py tests packages/forensic_core
 
       - name: Strict type check
         run: >-
           mypy --strict --ignore-missing-imports --allow-untyped-decorators
           config.py auth.py auditoria.py tasks.py main.py
+          packages/forensic_core/advanced_intelligence.py
 
       - name: Run API foundation tests
         run: python -m unittest tests.test_api_foundation -v
+
+      - name: Run advanced intelligence tests
+        run: python -m unittest packages.forensic_core.tests.test_advanced_intelligence -v
