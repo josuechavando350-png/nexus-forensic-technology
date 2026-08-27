@@ -43,10 +43,6 @@ class CapabilitySpecification:
         return bool(self.evidence_refs and all(ref.strip() for ref in self.evidence_refs))
 
 
-# Recovered only from user-supplied NEXUS source documents that explicitly bind
-# a capability number to a named behavior. These rows intentionally carry no
-# evidence_refs yet: historical/prototype code is specification provenance, not
-# proof that the current repository satisfies the capability.
 _DEFINED_SPECS: Mapping[int, tuple[str, str, tuple[str, ...], tuple[str, ...], str]] = {
     104: (
         "Atribución Táctica e Identificación Real",
@@ -136,7 +132,9 @@ _DEFINED_SPECS: Mapping[int, tuple[str, str, tuple[str, ...], tuple[str, ...], s
             "For every subsequent audit event, persist the previous record hash and calculate a new SHA-256 hash over the record content.",
             "Detect a broken hash chain rather than accepting altered records as valid audit history.",
         ),
-        (),
+        (
+            "packages/capabilities/tests/test_recovered_audit_log.py::RecoveredAuditLogCapabilityTests.test_capability_253_immutable_audit_log_chains_records",
+        ),
         "NEXUS_codigos_produccion.pdf §1, 'Módulos NEXUS implicados: #253 (Immutable Audit Log)'",
     ),
     262: (
@@ -150,6 +148,17 @@ _DEFINED_SPECS: Mapping[int, tuple[str, str, tuple[str, ...], tuple[str, ...], s
         (),
         "NEXUS_Componentes_Avanzados_Core.pdf §1, 'Generador Automatizado de Dictamen Pericial (#262)'",
     ),
+    295: (
+        "Least Privilege",
+        "Protects routes through bearer-token validation and explicit authentication claims so protected endpoints reject unauthenticated or invalid callers.",
+        (
+            "Require a bearer credential before admitting a caller to a protected route.",
+            "Reject expired or invalid tokens instead of returning an authenticated context.",
+            "Expose authorization claims explicitly; a single hard-coded role is not evidence of complete role-based access control.",
+        ),
+        (),
+        "NEXUS_codigos_produccion.pdf §3, 'Módulos NEXUS implicados: #295 (Least Privilege)'",
+    ),
     298: (
         "Tamper-Evident Logging",
         "Makes audit-log modification detectable by cryptographically chaining records with SHA-256 hashes.",
@@ -157,7 +166,9 @@ _DEFINED_SPECS: Mapping[int, tuple[str, str, tuple[str, ...], tuple[str, ...], s
             "Bind every non-genesis audit record to the exact hash of its predecessor.",
             "Verification must fail when a record hash or predecessor link no longer matches the stored chain.",
         ),
-        (),
+        (
+            "packages/capabilities/tests/test_recovered_audit_log.py::RecoveredAuditLogCapabilityTests.test_capability_298_tamper_evident_logging_rejects_modified_chain",
+        ),
         "NEXUS_codigos_produccion.pdf §1, 'Módulos NEXUS implicados: #298 (Tamper-Evident Logging)'",
     ),
 }
