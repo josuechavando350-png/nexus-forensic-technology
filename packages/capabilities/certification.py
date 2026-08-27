@@ -21,11 +21,14 @@ class CatalogCertificationSummary:
         return self.catalog_covered and self.adapter_contract == 0
 
 
-# Snapshot audited on 2026-08-27. Any change to these counts must be accompanied
-# by evidence that justifies promotion/demotion of the affected capability IDs.
+# Snapshot audited on 2026-08-27. Capability #131 was demoted from
+# verified_local to adapter_contract after recovering its authoritative
+# blockchain-transaction requirement from the supplied NEXUS source material.
+# Any further change to these counts must be accompanied by evidence that
+# justifies promotion/demotion of the affected capability IDs.
 AUDITED_SUPPORT_BASELINE = {
-    "verified_local": 205,
-    "adapter_contract": 99,
+    "verified_local": 204,
+    "adapter_contract": 100,
 }
 
 
