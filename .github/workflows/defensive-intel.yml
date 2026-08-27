@@ -1,0 +1,35 @@
+name: defensive-intel
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  defensive-intel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-defensive-intel.txt
+
+      - name: Install pinned dependencies
+        run: python -m pip install --requirement requirements-defensive-intel.txt
+
+      - name: Compile modules
+        run: python -m compileall -q packages/defensive_intel tests/test_defensive_intel.py
+
+      - name: Strict type check
+        run: mypy --strict --ignore-missing-imports packages/defensive_intel
+
+      - name: Run tests
+        run: python -m unittest tests.test_defensive_intel -v
