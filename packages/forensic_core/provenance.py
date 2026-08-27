@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
-from typing import Iterable
+from typing import Iterable, Mapping
 
 
 def _require_utc(value: datetime) -> datetime:
@@ -13,7 +13,7 @@ def _require_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def _canonical_json(value: dict[str, object]) -> bytes:
+def _canonical_json(value: Mapping[str, object]) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
