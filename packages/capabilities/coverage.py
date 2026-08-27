@@ -23,11 +23,11 @@ class CapabilityCoverage:
 _GROUPS: tuple[tuple[set[int], tuple[str, ...], str], ...] = (
     ({1, 44, 64, 122, 187, 188, 189, 190, 192, 194, 195, 197, 198}, ("packages.forensic_core.geospatial", "packages.integrations.geospatial"), "verified_local"),
     ({2, 38, 39, 65, 67, 116, 124, 208, 209, 225, 226, 227, 228, 229, 234, 237, 243}, ("packages.forensic_core.hypothesis",), "verified_local"),
-    ({9, 30, 35, 62, 111, 112, 114, 130, 131, 135, 136, 171, 172, 186, 199, 200, 201, 205, 207, 220, 235, 239, 245, 285, 300}, ("packages.forensic_core.graph", "packages.integrations.graph"), "verified_local"),
+    ({9, 30, 35, 62, 111, 112, 114, 130, 135, 136, 171, 172, 186, 199, 200, 201, 205, 207, 220, 235, 239, 245, 285, 300}, ("packages.forensic_core.graph", "packages.integrations.graph"), "verified_local"),
     ({12, 47, 160}, ("packages.integrations.cti",), "adapter_contract"),
     ({19, 75}, ("packages.integrations.forensics_cli",), "adapter_contract"),
     ({21, 99, 100, 101, 244, 246, 247, 248, 249, 252, 253, 256, 259, 260, 283, 284, 288, 289, 290, 298, 303, 304}, ("packages.forensic_core.acquisition", "packages.forensic_core.merkle", "packages.forensic_core.packaging", "packages.forensic_core.provenance", "packages.forensic_core.reporting"), "verified_local"),
-    ({23, 24, 59, 60, 97, 137}, ("packages.integrations.blockchain",), "adapter_contract"),
+    ({23, 24, 59, 60, 97, 131, 137}, ("packages.integrations.blockchain",), "adapter_contract"),
     ({37, 63, 94, 121}, ("packages.forensic_core.timeline",), "verified_local"),
     ({46, 58, 98, 127, 128, 129, 144}, ("packages.forensic_core.financial", "packages.forensic_core.anomaly"), "verified_local"),
     ({53, 147, 148, 151, 154}, ("packages.forensic_core.indicators", "packages.integrations.passive_infra"), "adapter_contract"),
