@@ -10,9 +10,9 @@ from packages.capabilities.coverage import CAPABILITY_COVERAGE, TOTAL_CATALOG_CA
 class CapabilitySpecification:
     """Canonical audit row for one roadmap capability.
 
-    A registry/module association is not a specification.  A capability becomes
+    A registry/module association is not a specification. A capability becomes
     specified only when its authoritative name, behavior, acceptance criteria,
-    and source are recorded explicitly.  Evidence is tracked per capability so
+    and source are recorded explicitly. Evidence is tracked per capability so
     module-level tests cannot silently certify unrelated IDs.
     """
 
@@ -43,11 +43,124 @@ class CapabilitySpecification:
         return bool(self.evidence_refs and all(ref.strip() for ref in self.evidence_refs))
 
 
-# This mapping is intentionally empty until an authoritative 1..304 roadmap
-# source is recovered.  Do not infer names or acceptance criteria from module
-# names: doing so would manufacture requirements and recreate the false-green
-# condition this audit is designed to eliminate.
-_DEFINED_SPECS: Mapping[int, tuple[str, str, tuple[str, ...], tuple[str, ...], str]] = {}
+# Recovered only from user-supplied NEXUS source documents that explicitly bind
+# a capability number to a named behavior. These rows intentionally carry no
+# evidence_refs yet: historical/prototype code is specification provenance, not
+# proof that the current repository satisfies the capability.
+_DEFINED_SPECS: Mapping[int, tuple[str, str, tuple[str, ...], tuple[str, ...], str]] = {
+    104: (
+        "Atribución Táctica e Identificación Real",
+        "Produce structured attribution fields for a case, including source IP, H3 operating zone, linked telephone, financial account, and identified account holder when those values exist.",
+        (
+            "Represent source IP, H3 zone, linked telephone, financial account, and identified holder as explicit attribution fields.",
+            "Do not treat absent attribution fields as independently verified identity evidence.",
+        ),
+        (),
+        "NEXUS_Componentes_Avanzados_Core.pdf §1, heading 'ATRIBUCIÓN TÁCTICA E IDENTIFICACIÓN REAL (#104)'",
+    ),
+    131: (
+        "Rastreo de Billetera Cripto",
+        "Reconstructs a blockchain transaction flow from a transaction hash and exposes origin wallet, destination wallet, and transferred value.",
+        (
+            "Accept a blockchain transaction hash through an explicit provider connection.",
+            "Return the transaction hash, origin wallet, destination wallet, and transferred amount when the provider supplies the transaction.",
+        ),
+        (),
+        "NEXUS_Componentes_Avanzados_Core.pdf §2, 'rastrear_billetera_cripto' (#131)",
+    ),
+    134: (
+        "Detección de Cuentas Puente o Mula",
+        "Detects accounts that rapidly disperse a configured proportion of incoming funds within a configured time window.",
+        (
+            "Calculate incoming and outgoing totals per account from timestamped transactions.",
+            "Flag an account only when the outgoing/incoming ratio meets the configured threshold and the dispersal occurs inside the configured time window.",
+        ),
+        (),
+        "NEXUS_Componentes_Avanzados_Core.pdf §2, 'analizar_red_cuentas_mula' (#134)",
+    ),
+    181: (
+        "Estilometría",
+        "Extracts a deterministic linguistic profile from text using token counts, average word length, lexical richness, and frequent vocabulary.",
+        (
+            "Normalize and tokenize the supplied text before measurement.",
+            "Return total words, average word length, lexical richness, and frequent vocabulary without asserting real-world identity from those measurements alone.",
+        ),
+        (),
+        "NEXUS_Componentes_Avanzados_Core.pdf §3, 'extraer_perfil_estilometrico' (#181)",
+    ),
+    185: (
+        "Análisis de Guiones de Engaño NLP",
+        "Scores supplied text against a knowledge base of scam/extortion script keywords and returns the highest-scoring category or an unclassified result.",
+        (
+            "Count keyword matches for every configured script category.",
+            "Return the category with the highest positive score, otherwise return an explicit unclassified result together with the score matrix.",
+        ),
+        (),
+        "NEXUS_Componentes_Avanzados_Core.pdf §3, 'clasificar_guion_extorsion' (#185)",
+    ),
+    219: (
+        "Complex Event Processing",
+        "Executes heavy intelligence-processing work outside the synchronous web request path through an asynchronous worker contract.",
+        (
+            "Dispatch heavy processing through an asynchronous worker rather than blocking the API request thread.",
+            "Expose a deterministic task result contract instead of relying on console output as completion evidence.",
+        ),
+        (),
+        "NEXUS_codigos_produccion.pdf §2, 'Módulos NEXUS implicados: #219 (Complex Event Processing)'",
+    ),
+    224: (
+        "Large-Scale Data Processing",
+        "Provides a background-processing path for high-consumption forensic/intelligence workloads using a queue-backed worker architecture.",
+        (
+            "Use an explicit broker-backed task queue for background execution.",
+            "Treat simulated sleeps or fabricated result counts as prototype behavior, not successful production processing.",
+        ),
+        (),
+        "NEXUS_codigos_produccion.pdf §2, 'Módulos NEXUS implicados: #224 (Large-Scale Data Processing)'",
+    ),
+    247: (
+        "Cadena de Custodia",
+        "Preserves evidence integrity metadata in the pericial output by associating each evidence element with its cryptographic hash.",
+        (
+            "List each preserved evidence element together with its cryptographic integrity value.",
+            "Do not represent a missing or unverified integrity value as preserved chain-of-custody evidence.",
+        ),
+        (),
+        "NEXUS_Componentes_Avanzados_Core.pdf §1, heading 'ELEMENTOS PROBATORIOS CONSERVADOS (CADENA DE CUSTODIA #247)'",
+    ),
+    253: (
+        "Immutable Audit Log",
+        "Maintains an append-only audit sequence in which each record contains the hash of the preceding record and its own SHA-256 integrity value.",
+        (
+            "Create a genesis record anchored to a zero previous hash.",
+            "For every subsequent audit event, persist the previous record hash and calculate a new SHA-256 hash over the record content.",
+            "Detect a broken hash chain rather than accepting altered records as valid audit history.",
+        ),
+        (),
+        "NEXUS_codigos_produccion.pdf §1, 'Módulos NEXUS implicados: #253 (Immutable Audit Log)'",
+    ),
+    262: (
+        "Generador Automatizado de Dictamen Pericial",
+        "Generates a structured forensic report from case data, including case metadata, preserved evidence hashes, and attributed technical indicators.",
+        (
+            "Generate a report artifact from an explicit case identifier and case data.",
+            "Include preserved evidence and integrity hashes in a dedicated evidence section.",
+            "Render attribution fields as reported case data without converting missing inputs into fabricated findings.",
+        ),
+        (),
+        "NEXUS_Componentes_Avanzados_Core.pdf §1, 'Generador Automatizado de Dictamen Pericial (#262)'",
+    ),
+    298: (
+        "Tamper-Evident Logging",
+        "Makes audit-log modification detectable by cryptographically chaining records with SHA-256 hashes.",
+        (
+            "Bind every non-genesis audit record to the exact hash of its predecessor.",
+            "Verification must fail when a record hash or predecessor link no longer matches the stored chain.",
+        ),
+        (),
+        "NEXUS_codigos_produccion.pdf §1, 'Módulos NEXUS implicados: #298 (Tamper-Evident Logging)'",
+    ),
+}
 
 
 def _build_specifications() -> dict[int, CapabilitySpecification]:
