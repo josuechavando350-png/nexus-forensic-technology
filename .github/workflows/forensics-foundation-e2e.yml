@@ -60,3 +60,33 @@ jobs:
         env:
           NEXUS_RUN_VOLATILITY_E2E: "1"
         run: python -m unittest packages.integrations.e2e.test_volatility_e2e -v
+
+  certify-velociraptor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download pinned Velociraptor binary
+        run: |
+          set -euo pipefail
+          url="https://github.com/Velocidex/velociraptor/releases/download/v0.77.2/velociraptor-v0.77.2-linux-amd64"
+          curl --fail --location --silent --show-error "$url" --output /tmp/velociraptor
+          echo "6c4c23c466d892788ff56ddcd3a31f844e4c0d797ade454c5e2625eb9e427077  /tmp/velociraptor" | sha256sum --check --strict
+          chmod 0755 /tmp/velociraptor
+          /tmp/velociraptor version
+
+      - name: Compile forensic integration modules
+        run: python -m compileall -q packages/integrations
+
+      - name: Run live Velociraptor certification
+        env:
+          NEXUS_RUN_VELOCIRAPTOR_E2E: "1"
+          NEXUS_VELOCIRAPTOR_BIN: /tmp/velociraptor
+        run: python -m unittest packages.integrations.e2e.test_velociraptor_e2e -v
