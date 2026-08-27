@@ -9,6 +9,9 @@ from packages.capabilities.specification import (
 )
 
 
+RECOVERED_SPEC_IDS = {104, 131, 134, 181, 185, 219, 224, 247, 253, 262, 298}
+
+
 class CapabilitySpecificationTests(unittest.TestCase):
     def test_matrix_has_exactly_304_rows(self) -> None:
         self.assertEqual(set(CAPABILITY_SPECIFICATIONS), set(range(1, 305)))
@@ -21,18 +24,32 @@ class CapabilitySpecificationTests(unittest.TestCase):
                 self.assertTrue(row.implementation_refs)
                 self.assertIn(row.support_level, {"verified_local", "adapter_contract"})
 
-    def test_current_audit_exposes_missing_authoritative_specs(self) -> None:
-        # No authoritative 1..304 source currently exists in the repository.
-        # The expected value is deliberately explicit so a future recovery of
-        # that source must update both the matrix and this audited baseline.
-        self.assertEqual(len(missing_specification_ids()), 304)
+    def test_recovered_document_specs_are_explicit_and_sourced(self) -> None:
+        recovered = {
+            capability_id
+            for capability_id, row in CAPABILITY_SPECIFICATIONS.items()
+            if row.is_specified
+        }
+        self.assertEqual(recovered, RECOVERED_SPEC_IDS)
+        for capability_id in sorted(RECOVERED_SPEC_IDS):
+            with self.subTest(capability_id=capability_id):
+                row = CAPABILITY_SPECIFICATIONS[capability_id]
+                self.assertTrue(row.title)
+                self.assertTrue(row.description)
+                self.assertTrue(row.acceptance_criteria)
+                self.assertIn("NEXUS_", row.specification_source or "")
+                # Specification provenance is not implementation evidence.
+                self.assertFalse(row.evidence_refs)
+
+    def test_current_audit_exposes_remaining_spec_and_evidence_debt(self) -> None:
+        self.assertEqual(len(missing_specification_ids()), 293)
         self.assertEqual(len(missing_per_capability_evidence_ids()), 304)
         self.assertEqual(
             canonical_audit_summary(),
             {
                 "catalog_total": 304,
-                "specified": 0,
-                "spec_missing": 304,
+                "specified": 11,
+                "spec_missing": 293,
                 "per_capability_evidenced": 0,
                 "per_capability_evidence_missing": 304,
             },
