@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 from dataclasses import dataclass
 from typing import Final
@@ -71,7 +72,7 @@ class MLDSA65EvidenceSigner:
         try:
             public_key = base64.b64decode(bundle.public_key_b64, validate=True)
             signature = base64.b64decode(bundle.signature_b64, validate=True)
-        except (ValueError, base64.binascii.Error):
+        except (ValueError, binascii.Error):
             return False
         try:
             verified = verify(public_key, digest, signature, CONTEXT)
