@@ -56,4 +56,6 @@ class Settings(BaseSettings):
         return value
 
 
-settings = Settings()
+# BaseSettings resolves required fields from the environment at runtime. Static mypy
+# cannot infer that dynamic constructor behavior from pydantic-settings.
+settings = Settings()  # type: ignore[call-arg]
