@@ -41,7 +41,7 @@ class EvidenceGraph:
             return (source,) if source in self._adjacency else None
         if source not in self._adjacency or target not in self._adjacency:
             return None
-        queue = deque([(source, (source,))])
+        queue: deque[tuple[str, tuple[str, ...]]] = deque([(source, (source,))])
         seen = {source}
         while queue:
             node, path = queue.popleft()
