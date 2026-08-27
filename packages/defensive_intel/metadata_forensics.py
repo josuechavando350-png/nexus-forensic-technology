@@ -19,14 +19,22 @@ class RationalLike(Protocol):
     denominator: object
 
 
+def _numeric_component(value: object, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field_name} is not numeric")
+    return float(value)
+
+
 def _ratio_to_float(value: object) -> float:
+    if isinstance(value, bool):
+        raise ValueError("EXIF coordinate component is not numeric")
     if isinstance(value, (int, float)):
         return float(value)
     rational = cast(RationalLike, value)
     try:
-        numerator = float(rational.numerator)
-        denominator = float(rational.denominator)
-    except (AttributeError, TypeError, ValueError) as exc:
+        numerator = _numeric_component(rational.numerator, "EXIF numerator")
+        denominator = _numeric_component(rational.denominator, "EXIF denominator")
+    except AttributeError as exc:
         raise ValueError("EXIF coordinate component is not numeric") from exc
     if denominator == 0:
         raise ValueError("EXIF rational denominator is zero")
