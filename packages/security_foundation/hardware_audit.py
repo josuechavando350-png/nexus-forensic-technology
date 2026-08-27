@@ -42,14 +42,7 @@ class TPM2NVAnchor:
     def read(self) -> str | None:
         try:
             completed = subprocess.run(
-                [
-                    self.read_executable,
-                    "-C",
-                    self.hierarchy,
-                    "-s",
-                    "32",
-                    self.nv_index,
-                ],
+                [self.read_executable, "-C", self.hierarchy, "-s", "32", self.nv_index],
                 check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -72,14 +65,7 @@ class TPM2NVAnchor:
         digest = bytes.fromhex(digest_hex)
         try:
             completed = subprocess.run(
-                [
-                    self.write_executable,
-                    "-C",
-                    self.hierarchy,
-                    "-i",
-                    "-",
-                    self.nv_index,
-                ],
+                [self.write_executable, "-C", self.hierarchy, "-i", "-", self.nv_index],
                 input=digest,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -104,13 +90,16 @@ def _validate_digest(digest_hex: str) -> None:
 
 
 def _canonical_hash(record: dict[str, object]) -> str:
-    encoded = json.dumps(
-        record,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
+    encoded = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _require_index(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise RuntimeError("audit record index must be an integer")
+    if value < 0:
+        raise RuntimeError("audit record index must not be negative")
+    return value
 
 
 class BitacoraEndurecidaHardware:
@@ -141,24 +130,19 @@ class BitacoraEndurecidaHardware:
     def _load_records(self) -> list[dict[str, object]]:
         try:
             lines = self._path.read_text(encoding="utf-8").splitlines()
-            records = [json.loads(line) for line in lines if line.strip()]
+            decoded = [json.loads(line) for line in lines if line.strip()]
         except (OSError, json.JSONDecodeError) as exc:
             raise RuntimeError("audit log cannot be parsed") from exc
-        if not records or not all(isinstance(record, dict) for record in records):
+        if not decoded or not all(isinstance(record, dict) for record in decoded):
             raise RuntimeError("audit log is empty or malformed")
-        return records
+        return [dict(record) for record in decoded]
 
     def _atomic_rewrite(self, records: list[dict[str, object]]) -> None:
         payload = "".join(
-            json.dumps(
-                record,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            )
-            + "\n"
+            json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
             for record in records
         )
+        temporary: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w",
@@ -174,6 +158,11 @@ class BitacoraEndurecidaHardware:
                 os.fsync(handle.fileno())
             os.replace(temporary, self._path)
         except OSError as exc:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
             raise RuntimeError("audit log atomic write failed") from exc
 
     def verify_chain(self) -> str:
@@ -182,8 +171,9 @@ class BitacoraEndurecidaHardware:
         for expected_index, record in enumerate(records):
             try:
                 actual_hash = str(record["hash_actual"])
-                base = {
-                    "index": int(record["index"]),
+                record_index = _require_index(record["index"])
+                base: dict[str, object] = {
+                    "index": record_index,
                     "timestamp_utc": str(record["timestamp_utc"]),
                     "agente": str(record["agente"]),
                     "accion": str(record["accion"]),
@@ -191,7 +181,8 @@ class BitacoraEndurecidaHardware:
                 }
             except (KeyError, TypeError, ValueError) as exc:
                 raise RuntimeError("audit record schema is invalid") from exc
-            if base["index"] != expected_index:
+            _validate_digest(actual_hash)
+            if record_index != expected_index:
                 raise RuntimeError("audit log index discontinuity detected")
             if base["hash_previo"] != previous:
                 raise RuntimeError("audit log chain discontinuity detected")
@@ -200,8 +191,10 @@ class BitacoraEndurecidaHardware:
             previous = actual_hash
 
         anchored = self._anchor.read()
-        if anchored is not None and anchored != previous:
-            raise RuntimeError("audit log does not match external anchor")
+        if anchored is not None:
+            _validate_digest(anchored)
+            if anchored != previous:
+                raise RuntimeError("audit log does not match external anchor")
         return previous
 
     def inyectar_log_militar(self, id_agente: str, operacion: str) -> str:
