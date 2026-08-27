@@ -9,7 +9,8 @@ from packages.capabilities.specification import (
 )
 
 
-RECOVERED_SPEC_IDS = {104, 131, 134, 181, 185, 219, 224, 247, 253, 262, 298}
+RECOVERED_SPEC_IDS = {104, 131, 134, 181, 185, 219, 224, 247, 253, 262, 295, 298}
+EVIDENCED_CAPABILITY_IDS = {253, 298}
 
 
 class CapabilitySpecificationTests(unittest.TestCase):
@@ -38,20 +39,28 @@ class CapabilitySpecificationTests(unittest.TestCase):
                 self.assertTrue(row.description)
                 self.assertTrue(row.acceptance_criteria)
                 self.assertIn("NEXUS_", row.specification_source or "")
-                # Specification provenance is not implementation evidence.
-                self.assertFalse(row.evidence_refs)
+
+    def test_only_individually_proven_capabilities_get_evidence_refs(self) -> None:
+        evidenced = {
+            capability_id
+            for capability_id, row in CAPABILITY_SPECIFICATIONS.items()
+            if row.has_per_capability_evidence
+        }
+        self.assertEqual(evidenced, EVIDENCED_CAPABILITY_IDS)
+        for capability_id in sorted(EVIDENCED_CAPABILITY_IDS):
+            self.assertTrue(CAPABILITY_SPECIFICATIONS[capability_id].evidence_refs)
 
     def test_current_audit_exposes_remaining_spec_and_evidence_debt(self) -> None:
-        self.assertEqual(len(missing_specification_ids()), 293)
-        self.assertEqual(len(missing_per_capability_evidence_ids()), 304)
+        self.assertEqual(len(missing_specification_ids()), 292)
+        self.assertEqual(len(missing_per_capability_evidence_ids()), 302)
         self.assertEqual(
             canonical_audit_summary(),
             {
                 "catalog_total": 304,
-                "specified": 11,
-                "spec_missing": 293,
-                "per_capability_evidenced": 0,
-                "per_capability_evidence_missing": 304,
+                "specified": 12,
+                "spec_missing": 292,
+                "per_capability_evidenced": 2,
+                "per_capability_evidence_missing": 302,
             },
         )
 
