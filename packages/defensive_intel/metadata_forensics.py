@@ -1,24 +1,36 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Optional
+from typing import Optional, Protocol, cast
 
 from PIL import Image, UnidentifiedImageError
-from PIL.ExifTags import GPS, TAGS
+from PIL.ExifTags import TAGS
 
 
 GpsCoordinate = tuple[float, float]
+GPS_LATITUDE_REF = 1
+GPS_LATITUDE = 2
+GPS_LONGITUDE_REF = 3
+GPS_LONGITUDE = 4
+
+
+class RationalLike(Protocol):
+    numerator: object
+    denominator: object
 
 
 def _ratio_to_float(value: object) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    rational = cast(RationalLike, value)
     try:
-        numerator = float(value.numerator)  # type: ignore[attr-defined]
-        denominator = float(value.denominator)  # type: ignore[attr-defined]
-        if denominator == 0:
-            raise ValueError("EXIF rational denominator is zero")
-        return numerator / denominator
-    except AttributeError:
-        return float(value)  # type: ignore[arg-type]
+        numerator = float(rational.numerator)
+        denominator = float(rational.denominator)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("EXIF coordinate component is not numeric") from exc
+    if denominator == 0:
+        raise ValueError("EXIF rational denominator is zero")
+    return numerator / denominator
 
 
 def _dms_to_decimal(values: tuple[object, object, object], reference: str) -> float:
@@ -26,7 +38,10 @@ def _dms_to_decimal(values: tuple[object, object, object], reference: str) -> fl
     minutes = _ratio_to_float(values[1])
     seconds = _ratio_to_float(values[2])
     decimal = degrees + minutes / 60.0 + seconds / 3600.0
-    if reference.upper() in {"S", "W"}:
+    normalized_reference = reference.upper()
+    if normalized_reference not in {"N", "S", "E", "W"}:
+        raise ValueError("EXIF GPS reference is invalid")
+    if normalized_reference in {"S", "W"}:
         decimal = -decimal
     return decimal
 
@@ -39,20 +54,20 @@ def extraer_gps_exif(archivo_bytes: bytes) -> Optional[GpsCoordinate]:
         with Image.open(BytesIO(archivo_bytes)) as image:
             exif = image.getexif()
             gps_ifd: dict[int, object] | None = None
-            for tag_id, value in exif.items():
+            for tag_id, _value in exif.items():
                 if TAGS.get(tag_id) == "GPSInfo":
-                    gps_ifd = exif.get_ifd(tag_id)
+                    raw_gps_ifd = exif.get_ifd(tag_id)
+                    gps_ifd = {int(key): value for key, value in raw_gps_ifd.items()}
                     break
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
+    except (UnidentifiedImageError, OSError, TypeError, ValueError) as exc:
         raise ValueError("input is not a readable image with valid metadata") from exc
 
     if not gps_ifd:
         return None
-    gps_by_name = {GPS.get(tag_id, str(tag_id)): value for tag_id, value in gps_ifd.items()}
-    latitude = gps_by_name.get("GPSLatitude")
-    latitude_ref = gps_by_name.get("GPSLatitudeRef")
-    longitude = gps_by_name.get("GPSLongitude")
-    longitude_ref = gps_by_name.get("GPSLongitudeRef")
+    latitude = gps_ifd.get(GPS_LATITUDE)
+    latitude_ref = gps_ifd.get(GPS_LATITUDE_REF)
+    longitude = gps_ifd.get(GPS_LONGITUDE)
+    longitude_ref = gps_ifd.get(GPS_LONGITUDE_REF)
     if not (
         isinstance(latitude, tuple)
         and len(latitude) == 3
