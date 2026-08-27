@@ -75,9 +75,9 @@ class MLDSA65EvidenceSigner:
         except (ValueError, binascii.Error):
             return False
         try:
-            verified = verify(public_key, digest, signature, CONTEXT)
+            verify(public_key, digest, signature, CONTEXT)
         except (TypeError, ValueError):
             return False
         except Exception as exc:
             raise RuntimeError("ML-DSA-65 verification failed") from exc
-        return bool(verified)
+        return True
