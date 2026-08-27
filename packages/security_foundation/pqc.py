@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Final
 
 from pqcrypto.sign.ml_dsa_65 import keygen, sign, verify
-from pqcrypto.sign.ml_dsa_65 import InvalidSignatureError
 
 ALGORITHM: Final[str] = "ML-DSA-65"
 CONTEXT: Final[bytes] = b"NEXUS-EVIDENCE-CUSTODY-v1"
@@ -21,7 +20,7 @@ class PQCSignatureBundle:
 
 
 class MLDSA65EvidenceSigner:
-    """NIST FIPS 204 ML-DSA-65 signing for evidence-integrity records."""
+    """ML-DSA-65 signing for evidence-integrity records using the pinned pqcrypto provider."""
 
     def __init__(self, public_key: bytes, secret_key: bytes) -> None:
         if not public_key:
@@ -49,6 +48,8 @@ class MLDSA65EvidenceSigner:
         digest = hashlib.sha3_256(evidence).digest()
         try:
             signature = sign(self._secret_key, digest, CONTEXT)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("ML-DSA-65 signing inputs were rejected") from exc
         except Exception as exc:
             raise RuntimeError("ML-DSA-65 signing failed") from exc
         return PQCSignatureBundle(
@@ -70,9 +71,12 @@ class MLDSA65EvidenceSigner:
         try:
             public_key = base64.b64decode(bundle.public_key_b64, validate=True)
             signature = base64.b64decode(bundle.signature_b64, validate=True)
-            verify(public_key, digest, signature, CONTEXT)
-        except (ValueError, InvalidSignatureError):
+        except (ValueError, base64.binascii.Error):
+            return False
+        try:
+            verified = verify(public_key, digest, signature, CONTEXT)
+        except (TypeError, ValueError):
             return False
         except Exception as exc:
             raise RuntimeError("ML-DSA-65 verification failed") from exc
-        return True
+        return bool(verified)
