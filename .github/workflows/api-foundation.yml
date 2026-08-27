@@ -37,8 +37,7 @@ jobs:
 
       - name: Strict type check
         run: >-
-          mypy --strict --ignore-missing-imports
-          --disable-error-code=untyped-decorator
+          mypy --strict --ignore-missing-imports --allow-untyped-decorators
           config.py auth.py auditoria.py tasks.py main.py
 
       - name: Run API foundation tests
