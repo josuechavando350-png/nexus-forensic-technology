@@ -1,3 +1,4 @@
+from .aircrack_ng import AirodumpAccessPoint, AirodumpParseError, AirodumpSnapshot, AirodumpStation, load_airodump_csv, parse_airodump_csv
 from .blockchain import Web3Adapter
 from .cti import MISPAdapter, OpenCTIAdapter
 from .forensics_cli import CommandResult, exiftool_metadata, ffprobe_metadata, run_read_only_command, sleuthkit_fls
@@ -11,6 +12,10 @@ from .search import OpenSearchAdapter
 from .streaming import KafkaProducerAdapter, SparkAdapter
 
 __all__ = [
+    "AirodumpAccessPoint",
+    "AirodumpParseError",
+    "AirodumpSnapshot",
+    "AirodumpStation",
     "CommandResult",
     "H3Adapter",
     "KafkaProducerAdapter",
@@ -28,6 +33,8 @@ __all__ = [
     "Web3Adapter",
     "exiftool_metadata",
     "ffprobe_metadata",
+    "load_airodump_csv",
+    "parse_airodump_csv",
     "parse_email_bytes",
     "run_read_only_command",
     "sklearn_dbscan",
