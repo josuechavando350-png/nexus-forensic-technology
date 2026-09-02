@@ -6,6 +6,7 @@ from packages.capabilities.certification import (
     contract_only_capability_ids,
     require_full_production_certification,
 )
+from packages.capabilities.coverage import CAPABILITY_COVERAGE
 
 
 class CatalogCertificationTests(unittest.TestCase):
@@ -22,6 +23,12 @@ class CatalogCertificationTests(unittest.TestCase):
         self.assertEqual(len(pending), summary.adapter_contract)
         self.assertFalse(summary.fully_production_certified)
         self.assertGreater(len(pending), 0)
+
+    def test_capability_131_is_blockchain_contract_not_local_graph_claim(self) -> None:
+        coverage = CAPABILITY_COVERAGE[131]
+        self.assertEqual(coverage.support_level, "adapter_contract")
+        self.assertEqual(coverage.implementation_refs, ("packages.integrations.blockchain",))
+        self.assertIn(131, contract_only_capability_ids())
 
     def test_full_production_certification_fails_closed(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "full production certification is not satisfied"):
