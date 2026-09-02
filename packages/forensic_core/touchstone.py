@@ -7,8 +7,10 @@ from pathlib import Path
 
 _PORTS_RE = re.compile(r"\.s(\d+)p$", re.IGNORECASE)
 _FREQ_SCALE = {"HZ": 1.0, "KHZ": 1e3, "MHZ": 1e6, "GHZ": 1e9}
+_PARAMETER_TYPES = {"S", "Y", "Z", "G", "H"}
 _FORMATS = {"RI", "MA", "DB"}
-_SUPPORTED_VERSIONS = {"1.0", "1.1", "2.0", "2.1"}
+_V2_VERSIONS = {"2.0", "2.1"}
+_OPTION_KEYWORDS = set(_FREQ_SCALE) | _PARAMETER_TYPES | _FORMATS | {"R"}
 
 
 class TouchstoneError(ValueError):
@@ -49,39 +51,69 @@ def _strip_comment(line: str) -> str:
     return line.split("!", 1)[0].strip()
 
 
-def _parse_option_line(line: str, ports: int) -> tuple[str, str, str, tuple[float, ...]]:
+def _parse_option_line(
+    line: str, ports: int
+) -> tuple[str, str, str, tuple[float, ...], bool]:
+    """Parse the order-independent Touchstone option line.
+
+    With the exception of a multi-valued per-port reference list, option-line
+    tokens may appear in any order. The boolean return value records whether
+    the line used the legacy Version 1.1 per-port-reference form.
+    """
+
     tokens = line[1:].split()
     unit = "GHZ"
     parameter = "S"
     data_format = "MA"
     references: tuple[float, ...] = (50.0,) * ports
-    if tokens:
-        unit = tokens[0].upper()
-    if len(tokens) > 1:
-        parameter = tokens[1].upper()
-    if len(tokens) > 2:
-        data_format = tokens[2].upper()
-    if unit not in _FREQ_SCALE:
-        raise TouchstoneError(f"unsupported frequency unit: {unit}")
-    if parameter not in {"S", "Y", "Z", "G", "H"}:
-        raise TouchstoneError(f"unsupported network parameter type: {parameter}")
+    reference_count = 0
+    saw_reference = False
+
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        upper = token.upper()
+        if upper in _FREQ_SCALE:
+            unit = upper
+            index += 1
+            continue
+        if upper in _PARAMETER_TYPES:
+            parameter = upper
+            index += 1
+            continue
+        if upper in _FORMATS:
+            data_format = upper
+            index += 1
+            continue
+        if upper == "R":
+            if saw_reference:
+                raise TouchstoneError("option line contains more than one R clause")
+            saw_reference = True
+            index += 1
+            raw_values: list[str] = []
+            while index < len(tokens) and tokens[index].upper() not in _OPTION_KEYWORDS:
+                raw_values.append(tokens[index])
+                index += 1
+            if not raw_values:
+                raise TouchstoneError("option line R requires a reference resistance")
+            try:
+                values = tuple(float(item) for item in raw_values)
+            except ValueError as exc:
+                raise TouchstoneError("invalid reference resistance") from exc
+            if len(values) not in {1, ports} or any(
+                not math.isfinite(value) or value <= 0 for value in values
+            ):
+                raise TouchstoneError(
+                    "reference resistance must contain one value or one value per port"
+                )
+            reference_count = len(values)
+            references = values * ports if len(values) == 1 else values
+            continue
+        raise TouchstoneError(f"unrecognized option-line token: {token}")
+
     if parameter in {"G", "H"} and ports != 2:
         raise TouchstoneError(f"{parameter}-parameters are defined only for two-port networks")
-    if data_format not in _FORMATS:
-        raise TouchstoneError(f"unsupported data format: {data_format}")
-    if len(tokens) > 3:
-        if tokens[3].upper() != "R" or len(tokens) < 5:
-            raise TouchstoneError("option line reference impedance is malformed")
-        try:
-            values = tuple(float(item) for item in tokens[4:])
-        except ValueError as exc:
-            raise TouchstoneError("invalid reference resistance") from exc
-        if len(values) not in {1, ports} or any(
-            not math.isfinite(value) or value <= 0 for value in values
-        ):
-            raise TouchstoneError("reference resistance must contain one value or one value per port")
-        references = values * ports if len(values) == 1 else values
-    return unit, parameter, data_format, references
+    return unit, parameter, data_format, references, reference_count == ports and ports > 1
 
 
 def _pair_to_complex(first: float, second: float, data_format: str) -> complex:
@@ -93,12 +125,14 @@ def _pair_to_complex(first: float, second: float, data_format: str) -> complex:
 
 
 def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
-    """Parse Full-matrix Touchstone network data from VNA evidence exports."""
+    """Parse bounded Full-matrix Touchstone network data from VNA exports."""
+
     if not isinstance(text, str):
         raise TypeError("text must be a string")
     match = _PORTS_RE.search(filename)
     extension_ports = int(match.group(1)) if match else None
-    version = "1.0"
+
+    version: str | None = None
     ports = extension_ports
     number_of_frequencies: int | None = None
     two_port_order: str | None = None
@@ -108,30 +142,51 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
     data_tokens: list[str] = []
     in_network_data = False
     in_reference = False
+    saw_non_comment = False
     saw_keyword = False
+    saw_version = False
+    saw_number_ports = False
+    saw_number_frequencies = False
     saw_network_data = False
+    saw_end = False
 
     for raw_line in text.splitlines():
         line = _strip_comment(raw_line)
         if not line:
             continue
+        if saw_end:
+            raise TouchstoneError("non-comment text appears after [End]")
+
         if line.startswith("#"):
-            option_line = line
+            if option_line is None:
+                option_line = line
             in_reference = False
+            saw_non_comment = True
             continue
+
         if line.startswith("["):
-            in_reference = False
             keyword, separator, argument = line.partition("]")
             if not separator:
                 raise TouchstoneError("unterminated Touchstone keyword")
             key = keyword[1:].strip().lower()
             value = argument.strip()
             saw_keyword = True
+            in_reference = False
+
             if key == "version":
-                if value not in _SUPPORTED_VERSIONS:
-                    raise TouchstoneError(f"unsupported Touchstone version: {value or '<missing>'}")
+                if saw_version:
+                    raise TouchstoneError("duplicate [Version] keyword")
+                if saw_non_comment:
+                    raise TouchstoneError("[Version] must precede all other non-comment lines")
+                if value not in _V2_VERSIONS:
+                    raise TouchstoneError(
+                        f"unsupported Touchstone version keyword: {value or '<missing>'}"
+                    )
                 version = value
+                saw_version = True
             elif key == "number of ports":
+                if saw_number_ports:
+                    raise TouchstoneError("duplicate [Number of Ports] keyword")
                 try:
                     parsed_ports = int(value)
                 except ValueError as exc:
@@ -141,14 +196,20 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
                 if extension_ports is not None and parsed_ports != extension_ports:
                     raise TouchstoneError("file extension and [Number of Ports] disagree")
                 ports = parsed_ports
+                saw_number_ports = True
             elif key == "number of frequencies":
+                if saw_number_frequencies:
+                    raise TouchstoneError("duplicate [Number of Frequencies] keyword")
                 try:
                     number_of_frequencies = int(value)
                 except ValueError as exc:
                     raise TouchstoneError("invalid [Number of Frequencies]") from exc
                 if number_of_frequencies <= 0:
                     raise TouchstoneError("[Number of Frequencies] must be positive")
+                saw_number_frequencies = True
             elif key == "two-port data order":
+                if two_port_order is not None:
+                    raise TouchstoneError("duplicate [Two-Port Data Order] keyword")
                 two_port_order = value.upper()
                 if two_port_order not in {"12_21", "21_12"}:
                     raise TouchstoneError("invalid [Two-Port Data Order]")
@@ -166,9 +227,12 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
                     except ValueError as exc:
                         raise TouchstoneError("invalid [Reference]") from exc
             elif key == "network data":
+                if saw_network_data:
+                    raise TouchstoneError("duplicate [Network Data] keyword")
                 saw_network_data = True
                 in_network_data = True
             elif key == "end":
+                saw_end = True
                 in_network_data = False
             elif key in {
                 "noise data",
@@ -180,38 +244,60 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
                 raise TouchstoneError(f"unsupported Touchstone section [{key}]")
             else:
                 raise TouchstoneError(f"unsupported Touchstone keyword [{key}]")
+            saw_non_comment = True
             continue
+
         if in_reference:
             try:
                 values = tuple(float(item) for item in line.split())
             except ValueError as exc:
                 raise TouchstoneError("invalid [Reference] data") from exc
             reference_override = (reference_override or ()) + values
+            saw_non_comment = True
             continue
-        if saw_keyword and version.startswith("2") and not in_network_data:
+        if saw_keyword and not in_network_data:
             raise TouchstoneError("Touchstone 2.x network values must follow [Network Data]")
         data_tokens.extend(line.split())
+        saw_non_comment = True
 
+    if saw_keyword and not saw_version:
+        raise TouchstoneError("Touchstone keyword files require [Version] 2.0 or 2.1")
     if ports is None:
         raise TouchstoneError("cannot determine port count from filename or [Number of Ports]")
     if ports > 64:
         raise TouchstoneError("port count exceeds supported forensic bound of 64")
     if option_line is None:
-        option_line = "# GHZ S MA R 50"
-    unit, parameter, data_format, references = _parse_option_line(option_line, ports)
+        raise TouchstoneError("Touchstone data requires an option line")
+
+    unit, parameter, data_format, references, legacy_per_port = _parse_option_line(
+        option_line, ports
+    )
+    if version is None:
+        version = "1.1" if legacy_per_port else "1.0"
+
     if reference_override is not None:
         if len(reference_override) != ports or any(
             not math.isfinite(value) or value <= 0 for value in reference_override
         ):
             raise TouchstoneError("[Reference] must provide one positive resistance per port")
         references = reference_override
+
     if version.startswith("2"):
-        if number_of_frequencies is None:
+        if not saw_number_ports:
+            raise TouchstoneError("Touchstone 2.x requires [Number of Ports]")
+        if not saw_number_frequencies:
             raise TouchstoneError("Touchstone 2.x requires [Number of Frequencies]")
         if not saw_network_data:
             raise TouchstoneError("Touchstone 2.x requires [Network Data]")
+        if not saw_end:
+            raise TouchstoneError("Touchstone 2.x requires [End]")
         if ports == 2 and two_port_order is None:
             raise TouchstoneError("Touchstone 2.x two-port data requires [Two-Port Data Order]")
+        if ports != 2 and two_port_order is not None:
+            raise TouchstoneError("[Two-Port Data Order] is permitted only for two-port data")
+    elif two_port_order is not None:
+        raise TouchstoneError("[Two-Port Data Order] is not permitted in Touchstone 1.x")
+
     if ports == 2 and two_port_order is None:
         two_port_order = "21_12"
     if matrix_format != "FULL":
@@ -220,6 +306,7 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
     values_per_point = 1 + 2 * ports * ports
     if not data_tokens or len(data_tokens) % values_per_point:
         raise TouchstoneError("network data does not contain complete frequency blocks")
+
     points: list[TouchstonePoint] = []
     scale = _FREQ_SCALE[unit]
     for offset in range(0, len(data_tokens), values_per_point):
@@ -240,8 +327,10 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
             for index in range(0, len(raw_values), 2)
         )
         points.append(TouchstonePoint(frequency, parameters))
+
     if number_of_frequencies is not None and number_of_frequencies != len(points):
         raise TouchstoneError("[Number of Frequencies] does not match network data")
+
     return TouchstoneNetwork(
         version=version,
         ports=ports,
