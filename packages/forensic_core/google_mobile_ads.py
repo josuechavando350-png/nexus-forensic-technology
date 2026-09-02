@@ -42,6 +42,11 @@ class IOSMobileAdsEvidence:
     is_ad_manager_app: bool | None
 
 
+def _ensure_text_bound(text: str, *, label: str) -> None:
+    if len(text.encode("utf-8")) > _MAX_EVIDENCE_BYTES:
+        raise MobileAdsEvidenceError(f"{label} evidence exceeds 16 MiB")
+
+
 def _bounded_text(path: str | Path) -> str:
     source = Path(path)
     if not source.is_file():
@@ -65,6 +70,7 @@ def parse_android_manifest(text: str) -> tuple[str | None, tuple[str, ...], bool
     """Extract Google Mobile Ads metadata from an Android manifest."""
     if not isinstance(text, str):
         raise TypeError("text must be a string")
+    _ensure_text_bound(text, label="Android manifest")
     try:
         root = ET.fromstring(text)
     except ET.ParseError as exc:
@@ -83,6 +89,7 @@ def parse_android_manifest(text: str) -> tuple[str | None, tuple[str, ...], bool
     application = root.find("application")
     application_id: str | None = None
     delay_measurement: bool | None = None
+    saw_delay_measurement = False
     if application is not None:
         for metadata in application.findall("meta-data"):
             name = metadata.attrib.get(_ANDROID_NAME)
@@ -92,6 +99,11 @@ def parse_android_manifest(text: str) -> tuple[str | None, tuple[str, ...], bool
                     raise MobileAdsEvidenceError("duplicate Mobile Ads APPLICATION_ID metadata")
                 application_id = _validate_application_id(value, field="Android APPLICATION_ID")
             elif name == "com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT":
+                if saw_delay_measurement:
+                    raise MobileAdsEvidenceError(
+                        "duplicate DELAY_APP_MEASUREMENT_INIT metadata"
+                    )
+                saw_delay_measurement = True
                 if value not in {"true", "false"}:
                     raise MobileAdsEvidenceError(
                         "DELAY_APP_MEASUREMENT_INIT must be true or false"
@@ -105,6 +117,7 @@ def parse_gradle_dependencies(text: str) -> tuple[tuple[str, str], ...]:
     """Extract pinned Google Mobile Ads Maven artifacts from Gradle evidence."""
     if not isinstance(text, str):
         raise TypeError("text must be a string")
+    _ensure_text_bound(text, label="Gradle")
     dependencies = {(match.group(1), match.group(2)) for match in _GRADLE_ADS.finditer(text)}
     return tuple(sorted(dependencies))
 
@@ -145,7 +158,7 @@ def parse_ios_info_plist(data: bytes) -> tuple[str | None, tuple[str, ...], bool
         raise MobileAdsEvidenceError("Info.plist evidence exceeds 16 MiB")
     try:
         payload = plistlib.loads(data)
-    except Exception as exc:  # plistlib raises several concrete parse exceptions.
+    except Exception as exc:  # plistlib exposes multiple parse failure types.
         raise MobileAdsEvidenceError("invalid Info.plist") from exc
     if not isinstance(payload, dict):
         raise MobileAdsEvidenceError("Info.plist root must be a dictionary")
@@ -180,6 +193,7 @@ def parse_podfile_lock(text: str) -> str | None:
     """Extract the resolved Google-Mobile-Ads-SDK CocoaPods version."""
     if not isinstance(text, str):
         raise TypeError("text must be a string")
+    _ensure_text_bound(text, label="Podfile.lock")
     versions = {match.group(1).strip() for match in _POD_ADS.finditer(text)}
     if len(versions) > 1:
         raise MobileAdsEvidenceError("Podfile.lock contains conflicting Google Mobile Ads versions")
