@@ -6,9 +6,15 @@ import subprocess
 from dataclasses import dataclass
 
 _BOARD_ID_RE = re.compile(r"^Board ID Number:\s*(\d+)\s*\((.+)\)$")
-_FIRMWARE_RE = re.compile(r"^Firmware Version:\s*(.*?)\s*\(API:([0-9A-Fa-f]+\.[0-9A-Fa-f]+)\)$")
-_PART_ID_RE = re.compile(r"^Part ID Number:\s*(0x[0-9A-Fa-f]{8})\s+(0x[0-9A-Fa-f]{8})$")
+_FIRMWARE_RE = re.compile(
+    r"^Firmware Version:\s*(.*?)\s*\(API:([0-9A-Fa-f]+\.[0-9A-Fa-f]+)\)$"
+)
+_PART_ID_RE = re.compile(
+    r"^Part ID Number:\s*(0x[0-9A-Fa-f]{8})\s+(0x[0-9A-Fa-f]{8})$"
+)
 _INDEX_RE = re.compile(r"^Index:\s*(\d+)$")
+_CPLD_RE = re.compile(r"^CPLD checksum:\s*(0x[0-9A-Fa-f]{8})$")
+_BUS_MANY_RE = re.compile(r"^There are (\d+) other devices on the same USB bus\.$")
 
 
 class HackRFInfoError(RuntimeError):
@@ -25,8 +31,12 @@ class HackRFDeviceInfo:
     usb_api_version: str
     part_id: tuple[str, str]
     board_revision: str | None
+    manufactured_by_gsg: bool | None
     supported_platforms: tuple[str, ...]
     operacake_addresses: tuple[int, ...]
+    cpld_checksum: str | None
+    usb_bus_other_devices: int | None
+    warnings: tuple[str, ...]
 
     @property
     def is_hackrf_one(self) -> bool:
@@ -69,18 +79,77 @@ def parse_hackrf_info(text: str) -> HackRFInventory:
         if current is None:
             return
         index = int(_require_device_field(current.get("index"), "index", -1))
+        part_id_raw = _require_device_field(current.get("part_id"), "part ID", index)
+        if not (
+            isinstance(part_id_raw, tuple)
+            and len(part_id_raw) == 2
+            and all(isinstance(item, str) for item in part_id_raw)
+        ):
+            raise HackRFInfoError(f"device {index}: invalid part ID")
+        platforms_raw = current.get("supported_platforms", [])
+        addresses_raw = current.get("operacake_addresses", [])
+        warnings_raw = current.get("warnings", [])
+        if not isinstance(platforms_raw, list) or not all(
+            isinstance(item, str) for item in platforms_raw
+        ):
+            raise HackRFInfoError(f"device {index}: invalid platform list")
+        if not isinstance(addresses_raw, list) or not all(
+            isinstance(item, int) for item in addresses_raw
+        ):
+            raise HackRFInfoError(f"device {index}: invalid Opera Cake list")
+        if not isinstance(warnings_raw, list) or not all(
+            isinstance(item, str) for item in warnings_raw
+        ):
+            raise HackRFInfoError(f"device {index}: invalid warning list")
+
         devices.append(
             HackRFDeviceInfo(
                 index=index,
-                serial_number=current.get("serial_number") if isinstance(current.get("serial_number"), str) else None,
-                board_id=int(_require_device_field(current.get("board_id"), "board ID", index)),
-                board_name=str(_require_device_field(current.get("board_name"), "board name", index)),
-                firmware_version=str(_require_device_field(current.get("firmware_version"), "firmware version", index)),
-                usb_api_version=str(_require_device_field(current.get("usb_api_version"), "USB API version", index)),
-                part_id=tuple(_require_device_field(current.get("part_id"), "part ID", index)),  # type: ignore[arg-type]
-                board_revision=current.get("board_revision") if isinstance(current.get("board_revision"), str) else None,
-                supported_platforms=tuple(current.get("supported_platforms", [])),  # type: ignore[arg-type]
-                operacake_addresses=tuple(current.get("operacake_addresses", [])),  # type: ignore[arg-type]
+                serial_number=(
+                    current.get("serial_number")
+                    if isinstance(current.get("serial_number"), str)
+                    else None
+                ),
+                board_id=int(
+                    _require_device_field(current.get("board_id"), "board ID", index)
+                ),
+                board_name=str(
+                    _require_device_field(current.get("board_name"), "board name", index)
+                ),
+                firmware_version=str(
+                    _require_device_field(
+                        current.get("firmware_version"), "firmware version", index
+                    )
+                ),
+                usb_api_version=str(
+                    _require_device_field(
+                        current.get("usb_api_version"), "USB API version", index
+                    )
+                ),
+                part_id=(part_id_raw[0], part_id_raw[1]),
+                board_revision=(
+                    current.get("board_revision")
+                    if isinstance(current.get("board_revision"), str)
+                    else None
+                ),
+                manufactured_by_gsg=(
+                    current.get("manufactured_by_gsg")
+                    if isinstance(current.get("manufactured_by_gsg"), bool)
+                    else None
+                ),
+                supported_platforms=tuple(platforms_raw),
+                operacake_addresses=tuple(addresses_raw),
+                cpld_checksum=(
+                    current.get("cpld_checksum")
+                    if isinstance(current.get("cpld_checksum"), str)
+                    else None
+                ),
+                usb_bus_other_devices=(
+                    current.get("usb_bus_other_devices")
+                    if isinstance(current.get("usb_bus_other_devices"), int)
+                    else None
+                ),
+                warnings=tuple(warnings_raw),
             )
         )
         current = None
@@ -104,10 +173,22 @@ def parse_hackrf_info(text: str) -> HackRFInventory:
             current = {
                 "supported_platforms": [],
                 "operacake_addresses": [],
+                "warnings": [],
             }
             continue
         if current is None:
             raise HackRFInfoError(f"line {line_number}: unexpected device data")
+
+        if line.startswith("Error:") or line.startswith("hackrf_read_selftest() failed:"):
+            raise HackRFInfoError(f"line {line_number}: {line}")
+        if line == "Self-test FAIL:":
+            raise HackRFInfoError(f"line {line_number}: HackRF self-test failed")
+        if line.startswith("Warning:"):
+            warnings = current["warnings"]
+            assert isinstance(warnings, list)
+            warnings.append(line.removeprefix("Warning:").strip())
+            collecting_platforms = False
+            continue
 
         match = _INDEX_RE.match(line)
         if match:
@@ -140,6 +221,14 @@ def parse_hackrf_info(text: str) -> HackRFInventory:
             current["board_revision"] = line.split(":", 1)[1].strip() or None
             collecting_platforms = False
             continue
+        if line == "Hardware appears to have been manufactured by Great Scott Gadgets.":
+            current["manufactured_by_gsg"] = True
+            collecting_platforms = False
+            continue
+        if line == "Hardware does not appear to have been manufactured by Great Scott Gadgets.":
+            current["manufactured_by_gsg"] = False
+            collecting_platforms = False
+            continue
         if line == "Hardware supported by installed firmware:":
             collecting_platforms = True
             continue
@@ -147,7 +236,9 @@ def parse_hackrf_info(text: str) -> HackRFInventory:
             try:
                 address = int(line.rsplit(":", 1)[1].strip())
             except ValueError as exc:
-                raise HackRFInfoError(f"line {line_number}: invalid Opera Cake address") from exc
+                raise HackRFInfoError(
+                    f"line {line_number}: invalid Opera Cake address"
+                ) from exc
             if not 0 <= address <= 7:
                 raise HackRFInfoError(f"line {line_number}: invalid Opera Cake address")
             addresses = current["operacake_addresses"]
@@ -155,13 +246,32 @@ def parse_hackrf_info(text: str) -> HackRFInventory:
             addresses.append(address)
             collecting_platforms = False
             continue
+        match = _CPLD_RE.match(line)
+        if match:
+            current["cpld_checksum"] = match.group(1).lower()
+            collecting_platforms = False
+            continue
+        if line == "This device is on its own USB bus.":
+            current["usb_bus_other_devices"] = 0
+            collecting_platforms = False
+            continue
+        if line == "There is 1 other device on the same USB bus.":
+            current["usb_bus_other_devices"] = 1
+            collecting_platforms = False
+            continue
+        match = _BUS_MANY_RE.match(line)
+        if match:
+            current["usb_bus_other_devices"] = int(match.group(1))
+            collecting_platforms = False
+            continue
+        if line == "You may have problems at high sample rates.":
+            collecting_platforms = False
+            continue
         if collecting_platforms:
             platforms = current["supported_platforms"]
             assert isinstance(platforms, list)
             platforms.append(line)
             continue
-        if line.startswith("Error:"):
-            raise HackRFInfoError(f"line {line_number}: {line}")
         raise HackRFInfoError(f"line {line_number}: unrecognized hackrf_info output")
 
     finish_current()
