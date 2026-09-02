@@ -20,6 +20,10 @@ _TSHARK_FIELDS = (
     "tcap.opCode",
     "tcap.errorCode",
 )
+_TCAP_BEGIN = 0x62
+_TCAP_END = 0x64
+_TCAP_CONTINUE = 0x65
+_TCAP_ABORT = 0x67
 
 
 class SS7MonitoringError(RuntimeError):
@@ -62,11 +66,10 @@ class SS7MonitoringReport:
 def tshark_ss7_argv(capture_path: str | Path, executable: str = "tshark") -> tuple[str, ...]:
     """Build a TShark command that reads an existing capture and never captures live traffic."""
 
-    source = str(Path(capture_path))
     argv: list[str] = [
         executable,
         "-r",
-        source,
+        str(Path(capture_path)),
         "-Y",
         "m3ua || sccp || tcap || gsm_map",
         "-T",
@@ -112,7 +115,8 @@ def parse_tshark_ss7_fields(text: str) -> tuple[SS7Record, ...]:
         raise TypeError("text must be a string")
 
     records: list[SS7Record] = []
-    for line_number, row in enumerate(csv.reader(text.splitlines(), delimiter="\t", quotechar='"'), start=1):
+    reader = csv.reader(text.splitlines(), delimiter="\t", quotechar='"')
+    for line_number, row in enumerate(reader, start=1):
         if not row or all(not item.strip() for item in row):
             continue
         if len(row) != len(_TSHARK_FIELDS):
@@ -155,10 +159,10 @@ def parse_tshark_ss7_fields(text: str) -> tuple[SS7Record, ...]:
 
 
 def analyze_ss7_records(records: tuple[SS7Record, ...] | list[SS7Record]) -> SS7MonitoringReport:
-    """Run deterministic integrity checks over decoded SS7/SIGTRAN evidence."""
+    """Run deterministic structural and transaction-integrity checks over evidence."""
 
     findings: list[SS7Finding] = []
-    seen_otids: dict[str, int] = {}
+    known_tids: dict[str, int] = {}
     started = 0
     errors = 0
 
@@ -172,28 +176,44 @@ def analyze_ss7_records(records: tuple[SS7Record, ...] | list[SS7Record]) -> SS7
         if record.dpc is not None and record.dpc > 0xFFFFFFFF:
             findings.append(SS7Finding(record.frame_number, "invalid_dpc", str(record.dpc)))
 
-        if record.otid:
+        msgtype = record.tcap_message_type
+        if msgtype == _TCAP_BEGIN:
             started += 1
-            previous_frame = seen_otids.get(record.otid)
-            if previous_frame is not None:
+            if not record.otid:
+                findings.append(
+                    SS7Finding(record.frame_number, "begin_without_otid", "TCAP Begin has no OTID")
+                )
+            elif record.otid in known_tids:
                 findings.append(
                     SS7Finding(
                         record.frame_number,
-                        "duplicate_otid",
-                        f"transaction {record.otid} first seen in frame {previous_frame}",
+                        "duplicate_begin_otid",
+                        f"transaction {record.otid} first seen in frame {known_tids[record.otid]}",
                     )
                 )
             else:
-                seen_otids[record.otid] = record.frame_number
+                known_tids[record.otid] = record.frame_number
 
-        if record.dtid and record.dtid not in seen_otids:
-            findings.append(
-                SS7Finding(
-                    record.frame_number,
-                    "unmatched_dtid",
-                    f"destination transaction {record.dtid} has no earlier OTID in this evidence set",
+        if msgtype in {_TCAP_CONTINUE, _TCAP_END, _TCAP_ABORT}:
+            if not record.dtid:
+                findings.append(
+                    SS7Finding(
+                        record.frame_number,
+                        "response_without_dtid",
+                        "TCAP Continue/End/Abort has no DTID",
+                    )
                 )
-            )
+            elif record.dtid not in known_tids:
+                findings.append(
+                    SS7Finding(
+                        record.frame_number,
+                        "unmatched_dtid",
+                        f"destination transaction {record.dtid} has no earlier OTID in this evidence set",
+                    )
+                )
+
+        if msgtype == _TCAP_CONTINUE and record.otid and record.otid not in known_tids:
+            known_tids[record.otid] = record.frame_number
 
         if record.error_code is not None:
             errors += 1
