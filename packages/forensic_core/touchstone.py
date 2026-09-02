@@ -8,6 +8,7 @@ from pathlib import Path
 _PORTS_RE = re.compile(r"\.s(\d+)p$", re.IGNORECASE)
 _FREQ_SCALE = {"HZ": 1.0, "KHZ": 1e3, "MHZ": 1e6, "GHZ": 1e9}
 _FORMATS = {"RI", "MA", "DB"}
+_SUPPORTED_VERSIONS = {"1.0", "1.1", "2.0", "2.1"}
 
 
 class TouchstoneError(ValueError):
@@ -77,7 +78,10 @@ def _parse_option_line(line: str, ports: int) -> tuple[str, str, str, tuple[floa
             values = tuple(float(item) for item in tokens[4:])
         except ValueError as exc:
             raise TouchstoneError("invalid reference resistance") from exc
-        if len(values) not in {1, ports} or any(value <= 0 for value in values):
+        if (
+            len(values) not in {1, ports}
+            or any(not math.isfinite(value) or value <= 0 for value in values)
+        ):
             raise TouchstoneError("reference resistance must contain one value or one value per port")
         references = values * ports if len(values) == 1 else values
 
@@ -95,9 +99,9 @@ def _pair_to_complex(first: float, second: float, data_format: str) -> complex:
 def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
     """Parse Full-matrix Touchstone 1.x/2.x network data from VNA exports.
 
-    The implementation covers the standard Full matrix form used for S-parameter
-    interchange. Lower/Upper matrices, noise blocks, mixed-mode blocks, and
-    information blocks are rejected explicitly instead of being guessed.
+    This covers the standard Full matrix interchange used by vector network
+    analyzers. Valid but unsupported sparse, noise, mixed-mode, and information
+    sections fail explicitly rather than being silently approximated.
     """
 
     if not isinstance(text, str):
@@ -115,7 +119,8 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
     data_tokens: list[str] = []
     in_network_data = False
     in_reference = False
-    saw_v2_keyword = False
+    saw_keyword = False
+    saw_network_data = False
 
     for raw_line in text.splitlines():
         line = _strip_comment(raw_line)
@@ -127,13 +132,15 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
             continue
         if line.startswith("["):
             in_reference = False
-            keyword, _, argument = line.partition("]")
+            keyword, separator, argument = line.partition("]")
+            if not separator:
+                raise TouchstoneError("unterminated Touchstone keyword")
             key = keyword[1:].strip().lower()
             value = argument.strip()
-            saw_v2_keyword = True
+            saw_keyword = True
             if key == "version":
-                if not value:
-                    raise TouchstoneError("[Version] requires an argument")
+                if value not in _SUPPORTED_VERSIONS:
+                    raise TouchstoneError(f"unsupported Touchstone version: {value or '<missing>'}")
                 version = value
             elif key == "number of ports":
                 try:
@@ -170,6 +177,7 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
                     except ValueError as exc:
                         raise TouchstoneError("invalid [Reference]") from exc
             elif key == "network data":
+                saw_network_data = True
                 in_network_data = True
             elif key == "end":
                 in_network_data = False
@@ -192,10 +200,12 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
                 raise TouchstoneError("invalid [Reference] data") from exc
             reference_override = (reference_override or ()) + values
             continue
-        if saw_v2_keyword and not in_network_data:
+        if saw_keyword and version.startswith("2") and not in_network_data:
             raise TouchstoneError("Touchstone 2.x network values must follow [Network Data]")
         data_tokens.extend(line.split())
 
+    if version not in _SUPPORTED_VERSIONS:
+        raise TouchstoneError(f"unsupported Touchstone version: {version}")
     if ports is None:
         raise TouchstoneError("cannot determine port count from filename or [Number of Ports]")
     if ports > 64:
@@ -203,13 +213,22 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
     if option_line is None:
         option_line = "# GHZ S MA R 50"
     unit, parameter, data_format, references = _parse_option_line(option_line, ports)
+
     if reference_override is not None:
-        if len(reference_override) != ports or any(value <= 0 for value in reference_override):
+        if (
+            len(reference_override) != ports
+            or any(not math.isfinite(value) or value <= 0 for value in reference_override)
+        ):
             raise TouchstoneError("[Reference] must provide one positive resistance per port")
         references = reference_override
 
-    if version.startswith("2") and ports == 2 and two_port_order is None:
-        raise TouchstoneError("Touchstone 2.x two-port data requires [Two-Port Data Order]")
+    if version.startswith("2"):
+        if number_of_frequencies is None:
+            raise TouchstoneError("Touchstone 2.x requires [Number of Frequencies]")
+        if not saw_network_data:
+            raise TouchstoneError("Touchstone 2.x requires [Network Data]")
+        if ports == 2 and two_port_order is None:
+            raise TouchstoneError("Touchstone 2.x two-port data requires [Two-Port Data Order]")
     if ports == 2 and two_port_order is None:
         two_port_order = "21_12"
     if matrix_format != "FULL":
@@ -228,8 +247,12 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
             raw_values = [float(item) for item in block[1:]]
         except ValueError as exc:
             raise TouchstoneError("network data contains a non-numeric value") from exc
-        if not math.isfinite(frequency) or frequency < 0:
-            raise TouchstoneError("frequency must be finite and non-negative")
+        if (
+            not math.isfinite(frequency)
+            or frequency < 0
+            or any(not math.isfinite(value) for value in raw_values)
+        ):
+            raise TouchstoneError("network data must contain finite numeric values")
         if points and frequency <= points[-1].frequency_hz:
             raise TouchstoneError("frequency points must be strictly increasing")
         parameters = tuple(
