@@ -55,7 +55,6 @@ def _parse_option_line(line: str, ports: int) -> tuple[str, str, str, tuple[floa
     parameter = "S"
     data_format = "MA"
     references: tuple[float, ...] = (50.0,) * ports
-
     if tokens:
         unit = tokens[0].upper()
     if len(tokens) > 1:
@@ -66,25 +65,22 @@ def _parse_option_line(line: str, ports: int) -> tuple[str, str, str, tuple[floa
         raise TouchstoneError(f"unsupported frequency unit: {unit}")
     if parameter not in {"S", "Y", "Z", "G", "H"}:
         raise TouchstoneError(f"unsupported network parameter type: {parameter}")
+    if parameter in {"G", "H"} and ports != 2:
+        raise TouchstoneError(f"{parameter}-parameters are defined only for two-port networks")
     if data_format not in _FORMATS:
         raise TouchstoneError(f"unsupported data format: {data_format}")
-
     if len(tokens) > 3:
-        if tokens[3].upper() != "R":
-            raise TouchstoneError("option line entries after format must begin with R")
-        if len(tokens) < 5:
-            raise TouchstoneError("option line R requires at least one reference resistance")
+        if tokens[3].upper() != "R" or len(tokens) < 5:
+            raise TouchstoneError("option line reference impedance is malformed")
         try:
             values = tuple(float(item) for item in tokens[4:])
         except ValueError as exc:
             raise TouchstoneError("invalid reference resistance") from exc
-        if (
-            len(values) not in {1, ports}
-            or any(not math.isfinite(value) or value <= 0 for value in values)
+        if len(values) not in {1, ports} or any(
+            not math.isfinite(value) or value <= 0 for value in values
         ):
             raise TouchstoneError("reference resistance must contain one value or one value per port")
         references = values * ports if len(values) == 1 else values
-
     return unit, parameter, data_format, references
 
 
@@ -97,18 +93,11 @@ def _pair_to_complex(first: float, second: float, data_format: str) -> complex:
 
 
 def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
-    """Parse Full-matrix Touchstone 1.x/2.x network data from VNA exports.
-
-    This covers the standard Full matrix interchange used by vector network
-    analyzers. Valid but unsupported sparse, noise, mixed-mode, and information
-    sections fail explicitly rather than being silently approximated.
-    """
-
+    """Parse Full-matrix Touchstone network data from VNA evidence exports."""
     if not isinstance(text, str):
         raise TypeError("text must be a string")
     match = _PORTS_RE.search(filename)
     extension_ports = int(match.group(1)) if match else None
-
     version = "1.0"
     ports = extension_ports
     number_of_frequencies: int | None = None
@@ -192,7 +181,6 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
             else:
                 raise TouchstoneError(f"unsupported Touchstone keyword [{key}]")
             continue
-
         if in_reference:
             try:
                 values = tuple(float(item) for item in line.split())
@@ -204,8 +192,6 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
             raise TouchstoneError("Touchstone 2.x network values must follow [Network Data]")
         data_tokens.extend(line.split())
 
-    if version not in _SUPPORTED_VERSIONS:
-        raise TouchstoneError(f"unsupported Touchstone version: {version}")
     if ports is None:
         raise TouchstoneError("cannot determine port count from filename or [Number of Ports]")
     if ports > 64:
@@ -213,15 +199,12 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
     if option_line is None:
         option_line = "# GHZ S MA R 50"
     unit, parameter, data_format, references = _parse_option_line(option_line, ports)
-
     if reference_override is not None:
-        if (
-            len(reference_override) != ports
-            or any(not math.isfinite(value) or value <= 0 for value in reference_override)
+        if len(reference_override) != ports or any(
+            not math.isfinite(value) or value <= 0 for value in reference_override
         ):
             raise TouchstoneError("[Reference] must provide one positive resistance per port")
         references = reference_override
-
     if version.startswith("2"):
         if number_of_frequencies is None:
             raise TouchstoneError("Touchstone 2.x requires [Number of Frequencies]")
@@ -237,7 +220,6 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
     values_per_point = 1 + 2 * ports * ports
     if not data_tokens or len(data_tokens) % values_per_point:
         raise TouchstoneError("network data does not contain complete frequency blocks")
-
     points: list[TouchstonePoint] = []
     scale = _FREQ_SCALE[unit]
     for offset in range(0, len(data_tokens), values_per_point):
@@ -247,10 +229,8 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
             raw_values = [float(item) for item in block[1:]]
         except ValueError as exc:
             raise TouchstoneError("network data contains a non-numeric value") from exc
-        if (
-            not math.isfinite(frequency)
-            or frequency < 0
-            or any(not math.isfinite(value) for value in raw_values)
+        if not math.isfinite(frequency) or frequency < 0 or any(
+            not math.isfinite(value) for value in raw_values
         ):
             raise TouchstoneError("network data must contain finite numeric values")
         if points and frequency <= points[-1].frequency_hz:
@@ -260,10 +240,8 @@ def parse_touchstone(text: str, *, filename: str) -> TouchstoneNetwork:
             for index in range(0, len(raw_values), 2)
         )
         points.append(TouchstonePoint(frequency, parameters))
-
     if number_of_frequencies is not None and number_of_frequencies != len(points):
         raise TouchstoneError("[Number of Frequencies] does not match network data")
-
     return TouchstoneNetwork(
         version=version,
         ports=ports,
